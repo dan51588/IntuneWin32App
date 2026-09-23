@@ -71,6 +71,16 @@ function Add-IntuneWin32App {
 
     .PARAMETER ReturnCode
         Provide an array of a single or multiple hash-tables for the Win32 application with return code information.
+        Return codes are merged with the default set of return codes: a default return code has its type changed, and any other return code is added.
+        Use New-IntuneWin32AppReturnCode to create return codes.
+
+    .PARAMETER RemoveReturnCode
+        Specify one or more return code values to remove from the default set of return codes, e.g. 1707.
+
+    .PARAMETER ReturnCodeAction
+        Specify how return codes from the ReturnCode parameter are applied. Supported values are: Merge (default) or Replace.
+        Merge adds or updates return codes in the default set of return codes. Replace discards the default set and configures exactly the return codes
+        passed in the ReturnCode parameter.
 
     .PARAMETER Icon
         Provide a Base64 encoded string of the PNG/JPG/JPEG file.
@@ -94,7 +104,7 @@ function Add-IntuneWin32App {
         Author:      Nickolaj Andersen
         Contact:     @NickolajA
         Created:     2020-01-04
-        Updated:     2023-09-02
+        Updated:     2026-09-23
 
         Version history:
         1.0.0 - (2020-01-04) Function created
@@ -115,6 +125,8 @@ function Add-IntuneWin32App {
         1.1.0 - (2023-03-17) Added parameter switch AllowAvailableUninstall. Fixed issue #77 related to scope tags and custom roles.
         1.1.1 - (2023-09-02) Added parameter MaximumInstallationTimeInMinutes. Updated with Test-AccessToken function.
         1.1.2 - (2024-12-19) Added logic to make Expand folder unique to avoid file access conflicts. (tjgruber)
+        1.1.3 - (2026-09-23) ReturnCode input now changes the type of a default return code instead of adding a duplicate entry. Return code input is validated
+                             before any other processing takes place. Added RemoveReturnCode and ReturnCodeAction parameters.
     #>
     [CmdletBinding(SupportsShouldProcess=$true, DefaultParameterSetName = "MSI")]
     param(
@@ -245,6 +257,16 @@ function Add-IntuneWin32App {
         [ValidateNotNullOrEmpty()]
         [System.Collections.Hashtable[]]$ReturnCode,
 
+        [parameter(Mandatory = $false, ParameterSetName = "MSI", HelpMessage = "Specify one or more return code values to remove from the default set of return codes.")]
+        [parameter(Mandatory = $false, ParameterSetName = "EXE")]
+        [ValidateNotNullOrEmpty()]
+        [int[]]$RemoveReturnCode,
+
+        [parameter(Mandatory = $false, ParameterSetName = "MSI", HelpMessage = "Specify how return codes from the ReturnCode parameter are applied. Supported values are: Merge (default) or Replace.")]
+        [parameter(Mandatory = $false, ParameterSetName = "EXE")]
+        [ValidateSet("Merge", "Replace")]
+        [string]$ReturnCodeAction = "Merge",
+
         [parameter(Mandatory = $false, ParameterSetName = "MSI", HelpMessage = "Provide a Base64 encoded string of the PNG/JPG/JPEG file.")]
         [parameter(Mandatory = $false, ParameterSetName = "EXE")]
         [ValidateNotNullOrEmpty()]
@@ -284,6 +306,10 @@ function Add-IntuneWin32App {
         $ErrorActionPreference = "Stop"
     }
     Process {
+        # Construct the return codes before any other processing, to fail on invalid return code input before the Win32 app is created
+        Write-Verbose -Message "Constructing return codes for Win32 app body from the default set of return codes"
+        $ReturnCodes = Merge-IntuneWin32AppReturnCode -BaseReturnCode (Get-IntuneWin32AppDefaultReturnCode) -ReturnCode $ReturnCode -RemoveReturnCode $RemoveReturnCode -Action $ReturnCodeAction
+
         try {
             # Attempt to gather all possible meta data from specified .intunewin file
             Write-Verbose -Message "Attempting to gather additional meta data from .intunewin file: $($FilePath)"
@@ -480,21 +506,9 @@ function Add-IntuneWin32App {
                 Write-Verbose -Message "Detection rule objects passed validation checks, attempting to add to existing Win32 app body"
                 $Win32AppBody.Add("detectionRules", $DetectionRule)
 
-                # Retrieve the default return codes for a Win32 app
-                Write-Verbose -Message "Retrieving default set of return codes for Win32 app body construction"
-                $DefaultReturnCodes = Get-IntuneWin32AppDefaultReturnCode
-
-                # Add custom return codes from parameter input to default set of objects
-                if ($PSBoundParameters["ReturnCode"]) {
-                    Write-Verbose -Message "Additional return codes where passed as command line input, adding to array of default return codes"
-                    foreach ($ReturnCodeItem in $ReturnCode) {
-                        $DefaultReturnCodes += $ReturnCodeItem
-                    }
-                }
-
                 # Add return codes to Win32 app body object
                 Write-Verbose -Message "Adding array of return codes to Win32 app body construction"
-                $Win32AppBody.Add("returnCodes", $DefaultReturnCodes)
+                $Win32AppBody.Add("returnCodes", $ReturnCodes)
 
                 # Add additional requirement rules to Win32 app body object
                 if ($PSBoundParameters["AdditionalRequirementRule"]) {

@@ -1,5 +1,21 @@
 # Release notes for IntuneWin32App module
 
+## Unreleased
+
+### Bug Fixes
+- `Set-IntuneWin32App`: the `ReturnCode` parameter now merges with the return codes currently configured on the app, instead of the hard-coded default set. Previously, existing return codes could not be changed, and custom return codes configured earlier were silently removed on every update
+- `Set-IntuneWin32App`: the `WhatIf` parameter is now honored. Previously the app was updated even when `WhatIf` was specified
+- `Set-IntuneWin32App`: `CompanyPortalFeaturedApp` and `AllowAvailableUninstall` can now be set to `$false`. Previously a `$false` value was silently ignored
+- `Set-IntuneWin32App`: invalid detection rule, requirement rule and return code input now throws a terminating error. Previously a warning was written and the app could still be updated with partially processed input, or processing stopped silently for the calling script's loop
+- `Set-IntuneWin32App`: an app that cannot be found by ID now writes an error instead of verbose output only
+- `Add-IntuneWin32App`: specifying a return code from the default set, e.g. 0 or 3010, now changes its type instead of adding a duplicate entry
+
+### Enhancements
+- Added `RemoveReturnCode` and `ReturnCodeAction` (Merge or Replace) parameters to `Add-IntuneWin32App` and `Set-IntuneWin32App`
+- Return code input is validated consistently in both functions (required properties, valid type with casing normalized, whole Int32 value, no duplicates) through the new `Merge-IntuneWin32AppReturnCode` private function
+- Return code changes (added, changed, removed, unchanged) are written as verbose output. Combine `WhatIf` and `Verbose` with `Set-IntuneWin32App` to preview changes
+- A warning is written when the resulting set of return codes contains no 'success' return code, or when return code 0 is no longer configured as 'success'
+
 ## 1.5.0
 
 ### Major Code Quality Improvements

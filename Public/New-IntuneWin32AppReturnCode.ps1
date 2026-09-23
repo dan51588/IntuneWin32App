@@ -10,7 +10,7 @@ function New-IntuneWin32AppReturnCode {
         Specify the return code value for the Win32 application body.
 
     .PARAMETER Type
-        Specify the type for the return code value for the Win32 application body. Supported values are: success, softReboot, hardReboot or retry.
+        Specify the type for the return code value for the Win32 application body. Supported values are: success, softReboot, hardReboot, retry or failed.
 
     .NOTES
         Author:      Nickolaj Andersen

@@ -71,12 +71,22 @@ function Set-IntuneWin32App {
 
     .PARAMETER ReturnCode
         Provide an array of a single or multiple hash-tables for the Win32 application with return code information.
+        Return codes are merged with the return codes currently configured on the Win32 application: a return code that already exists has its type changed,
+        and a return code that does not exist is added. Use New-IntuneWin32AppReturnCode to create return codes.
+
+    .PARAMETER RemoveReturnCode
+        Specify one or more return code values to remove from the return codes currently configured on the Win32 application, e.g. 1707.
+
+    .PARAMETER ReturnCodeAction
+        Specify how return codes from the ReturnCode parameter are applied. Supported values are: Merge (default) or Replace.
+        Merge adds or updates return codes in the set currently configured on the Win32 application. Replace discards the current set and configures exactly
+        the return codes passed in the ReturnCode parameter. Use the WhatIf and Verbose parameters together to preview the changes.
 
     .NOTES
         Author:      Nickolaj Andersen
         Contact:     @NickolajA
         Created:     2023-01-25
-        Updated:     2026-01-01
+        Updated:     2026-09-23
 
         Version history:
         1.0.0 - (2023-01-25) Function created
@@ -84,6 +94,10 @@ function Set-IntuneWin32App {
         1.0.2 - (2023-09-04) Updated with Test-AccessToken function
         1.0.3 - (2026-01-01) Added DetectionRule parameter with comprehensive validation (PR #197)
         1.0.4 - (2026-01-01) Added CategoryName, Icon, Install/Uninstall commands, RestartBehavior, MaximumInstallationTimeInMinutes, RequirementRule, AdditionalRequirementRule, and ReturnCode parameters with validation (PR #202)
+        1.0.5 - (2026-09-23) ReturnCode is now merged with the return codes configured on the app instead of the hard-coded default set, allowing existing
+                             return codes to be changed. Added RemoveReturnCode and ReturnCodeAction parameters. Added support for the WhatIf parameter.
+                             Fixed boolean parameters being ignored when set to $false. Invalid input now throws a terminating error instead of a warning,
+                             and an app that cannot be found by ID now writes an error.
     #>
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
@@ -181,12 +195,20 @@ function Set-IntuneWin32App {
 
         [parameter(Mandatory = $false, HelpMessage = "Provide an array of a single or multiple hash-tables for the Win32 application with return code information.")]
         [ValidateNotNullOrEmpty()]
-        [System.Collections.Hashtable[]]$ReturnCode
+        [System.Collections.Hashtable[]]$ReturnCode,
+
+        [parameter(Mandatory = $false, HelpMessage = "Specify one or more return code values to remove from the return codes currently configured on the Win32 application.")]
+        [ValidateNotNullOrEmpty()]
+        [int[]]$RemoveReturnCode,
+
+        [parameter(Mandatory = $false, HelpMessage = "Specify how return codes from the ReturnCode parameter are applied. Supported values are: Merge (default) or Replace.")]
+        [ValidateSet("Merge", "Replace")]
+        [string]$ReturnCodeAction = "Merge"
     )
     Begin {
         # Ensure required authentication header variable exists
         if (-not (Test-AuthenticationState)) {
-            Write-Warning -Message "Authentication token was not found, use Connect-MSIntuneGraph before using this function"; break
+            throw "Authentication token was not found, use Connect-MSIntuneGraph before using this function"
         }
 
         # Set script variable for error action preference
@@ -205,40 +227,40 @@ function Set-IntuneWin32App {
             }
 
             # Dynamically extend request body depending on what parameters are passed on the command line
-            if ($PSBoundParameters["DisplayName"]) {
+            if ($PSBoundParameters.ContainsKey("DisplayName")) {
                 $Win32AppBody.Add("displayName", $DisplayName)
             }
-            if ($PSBoundParameters["Description"]) {
+            if ($PSBoundParameters.ContainsKey("Description")) {
                 $Win32AppBody.Add("description", $Description)
             }
-            if ($PSBoundParameters["Publisher"]) {
+            if ($PSBoundParameters.ContainsKey("Publisher")) {
                 $Win32AppBody.Add("publisher", $Publisher)
             }
-            if ($PSBoundParameters["AppVersion"]) {
+            if ($PSBoundParameters.ContainsKey("AppVersion")) {
                 $Win32AppBody.Add("displayVersion", $AppVersion)
             }
-            if ($PSBoundParameters["Developer"]) {
+            if ($PSBoundParameters.ContainsKey("Developer")) {
                 $Win32AppBody.Add("developer", $Developer)
             }
-            if ($PSBoundParameters["Owner"]) {
+            if ($PSBoundParameters.ContainsKey("Owner")) {
                 $Win32AppBody.Add("owner", $Owner)
             }
-            if ($PSBoundParameters["Notes"]) {
+            if ($PSBoundParameters.ContainsKey("Notes")) {
                 $Win32AppBody.Add("notes", $Notes)
             }
-            if ($PSBoundParameters["InformationURL"]) {
+            if ($PSBoundParameters.ContainsKey("InformationURL")) {
                 $Win32AppBody.Add("informationUrl", $InformationURL)
             }
-            if ($PSBoundParameters["PrivacyURL"]) {
+            if ($PSBoundParameters.ContainsKey("PrivacyURL")) {
                 $Win32AppBody.Add("privacyInformationUrl", $PrivacyURL)
             }
-            if ($PSBoundParameters["CompanyPortalFeaturedApp"]) {
+            if ($PSBoundParameters.ContainsKey("CompanyPortalFeaturedApp")) {
                 $Win32AppBody.Add("isFeatured", $CompanyPortalFeaturedApp)
             }
-            if ($PSBoundParameters["AllowAvailableUninstall"]) {
+            if ($PSBoundParameters.ContainsKey("AllowAvailableUninstall")) {
                 $Win32AppBody.Add("allowAvailableUninstall", $AllowAvailableUninstall)
             }
-            if ($PSBoundParameters["CategoryName"]) {
+            if ($PSBoundParameters.ContainsKey("CategoryName")) {
                 # Process category names and lookup their IDs
                 Write-Verbose -Message "Processing category names"
                 $CategoryList = New-Object -TypeName "System.Collections.ArrayList"
@@ -276,7 +298,7 @@ function Set-IntuneWin32App {
                     $Win32AppBody.Add("categories", $CategoryList)
                 }
             }
-            if ($PSBoundParameters["Icon"]) {
+            if ($PSBoundParameters.ContainsKey("Icon")) {
                 Write-Verbose -Message "Adding icon to Win32 app body"
                 $Win32AppBody.Add("largeIcon", @{
                     "@odata.type" = "#microsoft.graph.mimeContent"
@@ -284,36 +306,34 @@ function Set-IntuneWin32App {
                     "value" = $Icon
                 })
             }
-            if ($PSBoundParameters["InstallCommandLine"]) {
+            if ($PSBoundParameters.ContainsKey("InstallCommandLine")) {
                 $Win32AppBody.Add("installCommandLine", $InstallCommandLine)
             }
-            if ($PSBoundParameters["UninstallCommandLine"]) {
+            if ($PSBoundParameters.ContainsKey("UninstallCommandLine")) {
                 $Win32AppBody.Add("uninstallCommandLine", $UninstallCommandLine)
             }
-            if ($PSBoundParameters["RestartBehavior"] -or $PSBoundParameters["MaximumInstallationTimeInMinutes"]) {
+            if ($PSBoundParameters.ContainsKey("RestartBehavior") -or $PSBoundParameters.ContainsKey("MaximumInstallationTimeInMinutes")) {
                 # Build installExperience object
                 $InstallExperience = @{}
-                if ($PSBoundParameters["RestartBehavior"]) {
+                if ($PSBoundParameters.ContainsKey("RestartBehavior")) {
                     $InstallExperience.Add("deviceRestartBehavior", $RestartBehavior)
                 }
-                if ($PSBoundParameters["MaximumInstallationTimeInMinutes"]) {
+                if ($PSBoundParameters.ContainsKey("MaximumInstallationTimeInMinutes")) {
                     $InstallExperience.Add("maxRunTimeInMinutes", $MaximumInstallationTimeInMinutes)
                 }
                 $Win32AppBody.Add("installExperience", $InstallExperience)
             }
-            if ($PSBoundParameters["RequirementRule"]) {
+            if ($PSBoundParameters.ContainsKey("RequirementRule")) {
                 Write-Verbose -Message "Validating requirement rule"
                 
                 # Validate requirement rule is an OrderedDictionary
                 if ($RequirementRule -isnot [System.Collections.Specialized.OrderedDictionary]) {
-                    Write-Warning -Message "RequirementRule must be of type OrderedDictionary. Use New-IntuneWin32AppRequirementRule function to create requirement rules."
-                    break
+                    throw "RequirementRule must be of type OrderedDictionary. Use New-IntuneWin32AppRequirementRule function to create requirement rules."
                 }
                 
                 # Validate @odata.type property exists
                 if (-not $RequirementRule.Contains("@odata.type")) {
-                    Write-Warning -Message "RequirementRule is missing required '@odata.type' property."
-                    break
+                    throw "RequirementRule is missing required '@odata.type' property."
                 }
                 
                 Write-Verbose -Message "Adding requirement rule to Win32 app body"
@@ -340,57 +360,38 @@ function Set-IntuneWin32App {
                     $Win32AppBody.Add("minimumCpuSpeedInMHz", $RequirementRule["minimumCpuSpeedInMHz"])
                 }
             }
-            if ($PSBoundParameters["AdditionalRequirementRule"]) {
+            if ($PSBoundParameters.ContainsKey("AdditionalRequirementRule")) {
                 Write-Verbose -Message "Processing additional requirement rules"
                 
                 # Validate each additional requirement rule
                 foreach ($Rule in $AdditionalRequirementRule) {
                     if ($Rule -isnot [System.Collections.Specialized.OrderedDictionary]) {
-                        Write-Warning -Message "AdditionalRequirementRule must contain OrderedDictionary objects. Use New-IntuneWin32AppRequirementRule* functions."
-                        break
+                        throw "AdditionalRequirementRule must contain OrderedDictionary objects. Use New-IntuneWin32AppRequirementRule* functions."
                     }
                     
                     if (-not $Rule.Contains("@odata.type")) {
-                        Write-Warning -Message "AdditionalRequirementRule is missing required '@odata.type' property."
-                        break
+                        throw "AdditionalRequirementRule is missing required '@odata.type' property."
                     }
                 }
                 
                 Write-Verbose -Message "Adding $($AdditionalRequirementRule.Count) additional requirement rules to Win32 app body"
                 $Win32AppBody.Add("requirementRules", $AdditionalRequirementRule)
             }
-            if ($PSBoundParameters["ReturnCode"]) {
+            if ($PSBoundParameters.ContainsKey("ReturnCode") -or $PSBoundParameters.ContainsKey("RemoveReturnCode") -or $PSBoundParameters.ContainsKey("ReturnCodeAction")) {
                 Write-Verbose -Message "Processing return codes"
-                
-                # Retrieve default return codes
-                $DefaultReturnCodes = Get-IntuneWin32AppDefaultReturnCode
-                
-                # Validate and add custom return codes
-                foreach ($ReturnCodeItem in $ReturnCode) {
-                    # Validate return code structure
-                    if (-not $ReturnCodeItem.ContainsKey("returnCode")) {
-                        Write-Warning -Message "ReturnCode object missing required 'returnCode' property"
-                        break
-                    }
-                    if (-not $ReturnCodeItem.ContainsKey("type")) {
-                        Write-Warning -Message "ReturnCode object missing required 'type' property"
-                        break
-                    }
-                    
-                    # Validate return code type
-                    $ValidReturnCodeTypes = @("failed", "success", "softReboot", "hardReboot", "retry")
-                    if ($ReturnCodeItem["type"] -notin $ValidReturnCodeTypes) {
-                        Write-Warning -Message "Invalid return code type: $($ReturnCodeItem['type']). Valid types are: $($ValidReturnCodeTypes -join ', ')"
-                        break
-                    }
-                    
-                    $DefaultReturnCodes += $ReturnCodeItem
+
+                # Graph replaces the entire returnCodes array on PATCH, merge with the return codes currently configured on the app so that existing return codes are preserved
+                $CurrentReturnCodes = $Win32App.returnCodes
+                if ($null -eq $CurrentReturnCodes -or @($CurrentReturnCodes).Count -eq 0) {
+                    Write-Verbose -Message "Win32 app has no return codes configured, using the default set of return codes as base"
+                    $CurrentReturnCodes = Get-IntuneWin32AppDefaultReturnCode
                 }
-                
-                Write-Verbose -Message "Adding $($DefaultReturnCodes.Count) return codes to Win32 app body"
-                $Win32AppBody.Add("returnCodes", $DefaultReturnCodes)
+                $ReturnCodes = Merge-IntuneWin32AppReturnCode -BaseReturnCode $CurrentReturnCodes -ReturnCode $ReturnCode -RemoveReturnCode $RemoveReturnCode -Action $ReturnCodeAction
+
+                Write-Verbose -Message "Adding $($ReturnCodes.Count) return codes to Win32 app body"
+                $Win32AppBody.Add("returnCodes", $ReturnCodes)
             }
-            if ($PSBoundParameters["DetectionRule"]) {
+            if ($PSBoundParameters.ContainsKey("DetectionRule")) {
                 # Validate detection rule objects
                 Write-Verbose -Message "Validating detection rule objects"
                 
@@ -406,27 +407,23 @@ function Set-IntuneWin32App {
                 foreach ($Rule in $DetectionRule) {
                     # Check if rule is an OrderedDictionary
                     if ($Rule -isnot [System.Collections.Specialized.OrderedDictionary]) {
-                        Write-Warning -Message "Detection rule must be of type OrderedDictionary. Use New-IntuneWin32AppDetectionRule* functions to create detection rules."
-                        break
+                        throw "Detection rule must be of type OrderedDictionary. Use New-IntuneWin32AppDetectionRule* functions to create detection rules."
                     }
                     
                     # Check if rule has @odata.type property
                     if (-not $Rule.Contains("@odata.type")) {
-                        Write-Warning -Message "Detection rule is missing required '@odata.type' property. Use New-IntuneWin32AppDetectionRule* functions to create detection rules."
-                        break
+                        throw "Detection rule is missing required '@odata.type' property. Use New-IntuneWin32AppDetectionRule* functions to create detection rules."
                     }
                     
                     # Validate @odata.type value
                     if ($Rule["@odata.type"] -notin $ValidDetectionTypes) {
-                        Write-Warning -Message "Invalid detection rule type: $($Rule['@odata.type']). Valid types are: $($ValidDetectionTypes -join ', ')"
-                        break
+                        throw "Invalid detection rule type: $($Rule['@odata.type']). Valid types are: $($ValidDetectionTypes -join ', ')"
                     }
                 }
                 
                 # Validate that correct detection rules have been passed on command line, only 1 PowerShell script based detection rule is allowed
                 if (($DetectionRule.'@odata.type' -contains "#microsoft.graph.win32LobAppPowerShellScriptDetection") -and (@($DetectionRule).'@odata.type'.Count -gt 1)) {
-                    Write-Warning -Message "Multiple PowerShell Script detection rules were detected, this is not a supported configuration"
-                    break
+                    throw "Multiple PowerShell Script detection rules were detected, this is not a supported configuration"
                 }
                 
                 # Add detection rules to Win32 app body object
@@ -434,21 +431,25 @@ function Set-IntuneWin32App {
                 $Win32AppBody.Add("detectionRules", $DetectionRule)
             }
 
-            try {
-                # Attempt to call Graph and update Win32 app
-                $Win32AppResponse = Invoke-MSGraphOperation -Patch -APIVersion "Beta" -Resource "deviceAppManagement/mobileApps/$($Win32AppID)" -Body ($Win32AppBody | ConvertTo-Json -Depth 3) -ErrorAction "Stop"
-                Write-Verbose -Message "Successfully updated Win32 app object with ID: $($Win32AppID)"
-                
-                # Return the updated app object
-                return $Win32AppResponse
-            }
-            catch [System.Exception] {
-                Write-Warning -Message "An error occurred while update Win32 app object. Error message: $($_.Exception.Message)"
-                throw
+            # Skip the update when the WhatIf parameter is passed, use the Verbose parameter to also output the changes that would be applied
+            $UpdatedProperties = @($Win32AppBody.Keys | Where-Object { $_ -ne "@odata.type" })
+            if ($PSCmdlet.ShouldProcess("Win32 app '$($Win32App.displayName)' with ID: $($Win32AppID)", "Update properties: $($UpdatedProperties -join ', ')")) {
+                try {
+                    # Attempt to call Graph and update Win32 app
+                    $Win32AppResponse = Invoke-MSGraphOperation -Patch -APIVersion "Beta" -Resource "deviceAppManagement/mobileApps/$($Win32AppID)" -Body ($Win32AppBody | ConvertTo-Json -Depth 3) -ErrorAction "Stop"
+                    Write-Verbose -Message "Successfully updated Win32 app object with ID: $($Win32AppID)"
+
+                    # Return the updated app object
+                    return $Win32AppResponse
+                }
+                catch [System.Exception] {
+                    Write-Warning -Message "An error occurred while update Win32 app object. Error message: $($_.Exception.Message)"
+                    throw
+                }
             }
         }
         else {
-            Write-Verbose -Message "Query for Win32 app returned an empty result, no apps matching the specified search criteria with ID '$($ID)' was found"
+            Write-Error -Message "Query for Win32 app returned an empty result, no apps matching the specified search criteria with ID '$($ID)' was found"
         }
     }
 }
