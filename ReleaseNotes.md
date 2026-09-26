@@ -11,6 +11,8 @@
 - `Add-IntuneWin32App`: specifying a return code from the default set, e.g. 0 or 3010, now changes its type instead of adding a duplicate entry
 - `Add-IntuneWin32App`: the validation that a PowerShell script detection rule is not combined with other detection rules was never triggered, because it referenced an undefined `$DetectionRules` variable. The validation now works and stops the app from being created
 
+- `Set-IntuneWin32App`: the `RequirementRule` parameter always failed for requirement rules created by `New-IntuneWin32AppRequirementRule`, as it expected an '@odata.type' property and the retired 'minimumSupportedOperatingSystem' property. Requirement rules are now converted by the new `ConvertTo-IntuneWin32AppRequirementRuleBody` private function, shared with `Add-IntuneWin32App`. Optional requirements not in the requirement rule, e.g. minimum memory, are cleared so the app matches the requirement rule, and changed properties are written as verbose output
+
 ### Enhancements
 - Added `RemoveReturnCode` and `ReturnCodeAction` (Merge or Replace) parameters to `Add-IntuneWin32App` and `Set-IntuneWin32App`
 - Return code input is validated consistently in both functions (required properties, valid type with casing normalized, whole Int32 value, no duplicates) through the new `Merge-IntuneWin32AppReturnCode` private function

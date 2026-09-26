@@ -64,7 +64,8 @@ function Set-IntuneWin32App {
         Specify the maximum installation time in minutes for the Win32 application (default is 60 minutes, range: 1-1440).
 
     .PARAMETER RequirementRule
-        Provide an OrderedDictionary object as requirement rule that will be used for the Win32 application.
+        Provide an OrderedDictionary object as requirement rule that will be used for the Win32 application, created by New-IntuneWin32AppRequirementRule.
+        The requirement rule replaces the current requirements: optional requirements that are not specified, e.g. MinimumMemoryInMB, are cleared.
 
     .PARAMETER AdditionalRequirementRule
         Provide an array of OrderedDictionary objects as additional requirement rule, e.g. for file, registry or script rules, that will be used for the Win32 application.
@@ -86,7 +87,7 @@ function Set-IntuneWin32App {
         Author:      Nickolaj Andersen
         Contact:     @NickolajA
         Created:     2023-01-25
-        Updated:     2026-09-23
+        Updated:     2026-09-26
 
         Version history:
         1.0.0 - (2023-01-25) Function created
@@ -98,6 +99,8 @@ function Set-IntuneWin32App {
                              return codes to be changed. Added RemoveReturnCode and ReturnCodeAction parameters. Added support for the WhatIf parameter.
                              Fixed boolean parameters being ignored when set to $false. Invalid input now throws a terminating error instead of a warning,
                              and an app that cannot be found by ID now writes an error.
+        1.0.6 - (2026-09-26) Fixed RequirementRule parameter always failing for requirement rules created by New-IntuneWin32AppRequirementRule. Requirement rules are now
+                             converted by the ConvertTo-IntuneWin32AppRequirementRuleBody function, shared with Add-IntuneWin32App.
     #>
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
@@ -324,40 +327,23 @@ function Set-IntuneWin32App {
                 $Win32AppBody.Add("installExperience", $InstallExperience)
             }
             if ($PSBoundParameters.ContainsKey("RequirementRule")) {
-                Write-Verbose -Message "Validating requirement rule"
-                
-                # Validate requirement rule is an OrderedDictionary
-                if ($RequirementRule -isnot [System.Collections.Specialized.OrderedDictionary]) {
-                    throw "RequirementRule must be of type OrderedDictionary. Use New-IntuneWin32AppRequirementRule function to create requirement rules."
+                Write-Verbose -Message "Processing requirement rule"
+
+                # Convert requirement rule the same way as Add-IntuneWin32App, optional properties not in the requirement rule are cleared so the app matches the requirement rule
+                $RequirementRuleBody = ConvertTo-IntuneWin32AppRequirementRuleBody -RequirementRule $RequirementRule -IncludeUnsetProperties
+                if ((-not $RequirementRuleBody.Contains("allowedArchitectures")) -and (-not [string]::IsNullOrEmpty($Win32App.allowedArchitectures))) {
+                    Write-Warning -Message "RequirementRule only contains the legacy 'applicableArchitectures' property, while the Win32 app uses 'allowedArchitectures' which is not changed. Use New-IntuneWin32AppRequirementRule to create requirement rules."
                 }
-                
-                # Validate @odata.type property exists
-                if (-not $RequirementRule.Contains("@odata.type")) {
-                    throw "RequirementRule is missing required '@odata.type' property."
-                }
-                
-                Write-Verbose -Message "Adding requirement rule to Win32 app body"
-                
-                # If there's already a minimumSupportedOperatingSystem in the body, preserve it
-                if (-not $Win32AppBody.ContainsKey("minimumSupportedOperatingSystem")) {
-                    # Extract OS requirement from rule if present
-                    if ($RequirementRule.ContainsKey("minimumSupportedOperatingSystem")) {
-                        $Win32AppBody.Add("minimumSupportedOperatingSystem", $RequirementRule["minimumSupportedOperatingSystem"])
+                foreach ($RequirementRuleProperty in $RequirementRuleBody.Keys) {
+                    $CurrentValue = $Win32App.$RequirementRuleProperty
+                    $NewValue = $RequirementRuleBody[$RequirementRuleProperty]
+                    if ("$($CurrentValue)" -ne "$($NewValue)") {
+                        Write-Verbose -Message "Requirement rule property changed: $($RequirementRuleProperty) ($(if ($null -eq $CurrentValue) { "null" } else { $CurrentValue }) -> $(if ($null -eq $NewValue) { "null" } else { $NewValue }))"
                     }
-                }
-                
-                # Add additional requirement properties
-                if ($RequirementRule.ContainsKey("minimumFreeDiskSpaceInMB") -and $RequirementRule["minimumFreeDiskSpaceInMB"] -ne $null) {
-                    $Win32AppBody.Add("minimumFreeDiskSpaceInMB", $RequirementRule["minimumFreeDiskSpaceInMB"])
-                }
-                if ($RequirementRule.ContainsKey("minimumMemoryInMB") -and $RequirementRule["minimumMemoryInMB"] -ne $null) {
-                    $Win32AppBody.Add("minimumMemoryInMB", $RequirementRule["minimumMemoryInMB"])
-                }
-                if ($RequirementRule.ContainsKey("minimumNumberOfProcessors") -and $RequirementRule["minimumNumberOfProcessors"] -ne $null) {
-                    $Win32AppBody.Add("minimumNumberOfProcessors", $RequirementRule["minimumNumberOfProcessors"])
-                }
-                if ($RequirementRule.ContainsKey("minimumCpuSpeedInMHz") -and $RequirementRule["minimumCpuSpeedInMHz"] -ne $null) {
-                    $Win32AppBody.Add("minimumCpuSpeedInMHz", $RequirementRule["minimumCpuSpeedInMHz"])
+                    else {
+                        Write-Verbose -Message "Requirement rule property unchanged: $($RequirementRuleProperty) ($(if ($null -eq $CurrentValue) { "null" } else { $CurrentValue }))"
+                    }
+                    $Win32AppBody.Add($RequirementRuleProperty, $NewValue)
                 }
             }
             if ($PSBoundParameters.ContainsKey("AdditionalRequirementRule")) {

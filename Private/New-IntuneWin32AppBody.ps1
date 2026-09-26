@@ -106,7 +106,7 @@ function New-IntuneWin32AppBody {
         Author:      Nickolaj Andersen
         Contact:     @NickolajA
         Created:     2020-01-04
-        Updated:     2023-03-17
+        Updated:     2026-09-26
 
         Version history:
         1.0.0 - (2020-01-04) Function created
@@ -119,6 +119,7 @@ function New-IntuneWin32AppBody {
         1.0.4 - (2023-01-20) Added requirement rule to both MSI and EXE switch statements, now handled dynamically based on what's present in the requirement rule object.
                              Added ScopeTagList and CategoryList parameters.
         1.0.4 - (2023-03-17) Added AllowAvailableUninstall parameter switch. Improved handling of RequirementRule when not passed on the command line.
+        1.0.5 - (2026-09-26) Requirement rule properties are now converted by the ConvertTo-IntuneWin32AppRequirementRuleBody function, shared with Set-IntuneWin32App.
     #>
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
@@ -264,18 +265,8 @@ function New-IntuneWin32AppBody {
         [ValidateNotNullOrEmpty()]
         [switch]$UnattendedUninstall
     )
-    # Determine values for requirement rules
-    if ($PSBoundParameters["RequirementRule"]) {
-        # Define required requirement rules properties
-        $ApplicableArchitectures = $RequirementRule["applicableArchitectures"]
-        $AllowedArchitectures = $RequirementRule["allowedArchitectures"]
-        $MinimumSupportedWindowsRelease = $RequirementRule["minimumSupportedWindowsRelease"]
-    }
-    else {
-        $ApplicableArchitectures = "x64,x86"
-        $AllowedArchitectures = $null
-        $MinimumSupportedWindowsRelease = "2H20"
-    }
+    # Convert requirement rule into Win32 app body properties, default requirement properties are used when no requirement rule is passed
+    $RequirementRuleBody = ConvertTo-IntuneWin32AppRequirementRuleBody -RequirementRule $RequirementRule
 
     switch ($PSCmdlet.ParameterSetName) {
         "MSI" {
@@ -297,7 +288,6 @@ function New-IntuneWin32AppBody {
                     "deviceRestartBehavior" = $RestartBehavior
                     "maxRunTimeInMinutes" = $MaximumInstallationTimeInMinutes
                 }
-                "minimumSupportedWindowsRelease" = $MinimumSupportedWindowsRelease
                 "msiInformation" = @{
                     "packageType" = $MSIInstallPurpose
                     "productCode" = $MSIProductCode
@@ -311,13 +301,9 @@ function New-IntuneWin32AppBody {
                 "runAs32bit" = $false
             }
 
-            # Add architecture properties based on what's available in the requirement rule
-            if ($AllowedArchitectures) {
-                $Win32AppBody.Add("allowedArchitectures", $AllowedArchitectures)
-                $Win32AppBody.Add("applicableArchitectures", "none")
-            }
-            else {
-                $Win32AppBody.Add("applicableArchitectures", $ApplicableArchitectures)
+            # Add requirement rule properties
+            foreach ($RequirementRuleProperty in $RequirementRuleBody.Keys) {
+                $Win32AppBody.Add($RequirementRuleProperty, $RequirementRuleBody[$RequirementRuleProperty])
             }
 
             # Handle unattended/interactive install and uninstall command lines
@@ -332,22 +318,6 @@ function New-IntuneWin32AppBody {
             }
             else {
                 $Win32AppBody.Add("uninstallCommandLine", "msiexec.exe /x `"$MSIProductCode`"")
-            }
-
-            # Add requirement rule items dynamically
-            if ($PSBoundParameters["RequirementRule"]) {
-                if ($RequirementRule["minimumFreeDiskSpaceInMB"]) {
-                    $Win32AppBody.Add("minimumFreeDiskSpaceInMB", $RequirementRule["minimumFreeDiskSpaceInMB"])
-                }
-                if ($RequirementRule["minimumMemoryInMB"]) {
-                    $Win32AppBody.Add("minimumMemoryInMB", $RequirementRule["minimumMemoryInMB"])
-                }
-                if ($RequirementRule["minimumNumberOfProcessors"]) {
-                    $Win32AppBody.Add("minimumNumberOfProcessors", $RequirementRule["minimumNumberOfProcessors"])
-                }
-                if ($RequirementRule["minimumCpuSpeedInMHz"]) {
-                    $Win32AppBody.Add("minimumCpuSpeedInMHz", $RequirementRule["minimumCpuSpeedInMHz"])
-                }
             }
 
             # Add icon property if passed on command line
@@ -394,35 +364,14 @@ function New-IntuneWin32AppBody {
                     "deviceRestartBehavior" = $RestartBehavior
                     "maxRunTimeInMinutes" = $MaximumInstallationTimeInMinutes
                 }
-                "minimumSupportedWindowsRelease" = $MinimumSupportedWindowsRelease
                 "msiInformation" = $null
                 "publisher" = $Publisher
                 "runAs32bit" = $false
             }
 
-            # Add architecture properties based on what's available in the requirement rule
-            if ($AllowedArchitectures) {
-                $Win32AppBody.Add("allowedArchitectures", $AllowedArchitectures)
-                $Win32AppBody.Add("applicableArchitectures", "none")
-            }
-            else {
-                $Win32AppBody.Add("applicableArchitectures", $ApplicableArchitectures)
-            }
-
-            # Add requirement rule items dynamically
-            if ($PSBoundParameters["RequirementRule"]) {
-                if ($RequirementRule["minimumFreeDiskSpaceInMB"]) {
-                    $Win32AppBody.Add("minimumFreeDiskSpaceInMB", $RequirementRule["minimumFreeDiskSpaceInMB"])
-                }
-                if ($RequirementRule["minimumMemoryInMB"]) {
-                    $Win32AppBody.Add("minimumMemoryInMB", $RequirementRule["minimumMemoryInMB"])
-                }
-                if ($RequirementRule["minimumNumberOfProcessors"]) {
-                    $Win32AppBody.Add("minimumNumberOfProcessors", $RequirementRule["minimumNumberOfProcessors"])
-                }
-                if ($RequirementRule["minimumCpuSpeedInMHz"]) {
-                    $Win32AppBody.Add("minimumCpuSpeedInMHz", $RequirementRule["minimumCpuSpeedInMHz"])
-                }
+            # Add requirement rule properties
+            foreach ($RequirementRuleProperty in $RequirementRuleBody.Keys) {
+                $Win32AppBody.Add($RequirementRuleProperty, $RequirementRuleBody[$RequirementRuleProperty])
             }
 
             # Add icon property if passed on command line
