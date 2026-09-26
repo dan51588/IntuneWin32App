@@ -104,7 +104,7 @@ function Add-IntuneWin32App {
         Author:      Nickolaj Andersen
         Contact:     @NickolajA
         Created:     2020-01-04
-        Updated:     2026-09-23
+        Updated:     2026-09-26
 
         Version history:
         1.0.0 - (2020-01-04) Function created
@@ -127,6 +127,8 @@ function Add-IntuneWin32App {
         1.1.2 - (2024-12-19) Added logic to make Expand folder unique to avoid file access conflicts. (tjgruber)
         1.1.3 - (2026-09-23) ReturnCode input now changes the type of a default return code instead of adding a duplicate entry. Return code input is validated
                              before any other processing takes place. Added RemoveReturnCode and ReturnCodeAction parameters.
+        1.1.4 - (2026-09-26) Fixed the PowerShell script detection rule validation never being triggered, due to referencing an undefined variable.
+                             The validation now throws an error instead of using break, which could silently stop processing in the calling script.
     #>
     [CmdletBinding(SupportsShouldProcess=$true, DefaultParameterSetName = "MSI")]
     param(
@@ -497,9 +499,9 @@ function Add-IntuneWin32App {
                     }
                 }
 
-                # Validate that correct detection rules have been passed on command line, only 1 PowerShell script based detection rule is allowed
-                if (($DetectionRule.'@odata.type' -contains "#microsoft.graph.win32LobAppPowerShellScriptDetection") -and (@($DetectionRules).'@odata.type'.Count -gt 1)) {
-                    Write-Warning -Message "Multiple PowerShell Script detection rules were detected, this is not a supported configuration"; break
+                # Validate that correct detection rules have been passed on command line, a PowerShell script based detection rule must be the only detection rule
+                if (($DetectionRule.'@odata.type' -contains "#microsoft.graph.win32LobAppPowerShellScriptDetection") -and (@($DetectionRule.'@odata.type').Count -gt 1)) {
+                    throw "A PowerShell script detection rule cannot be combined with other detection rules, including another PowerShell script detection rule. This is not a supported configuration"
                 }
 
                 # Add detection rules to Win32 app body object

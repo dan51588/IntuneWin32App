@@ -9,6 +9,7 @@
 - `Set-IntuneWin32App`: invalid detection rule, requirement rule and return code input now throws a terminating error. Previously a warning was written and the app could still be updated with partially processed input, or processing stopped silently for the calling script's loop
 - `Set-IntuneWin32App`: an app that cannot be found by ID now writes an error instead of verbose output only
 - `Add-IntuneWin32App`: specifying a return code from the default set, e.g. 0 or 3010, now changes its type instead of adding a duplicate entry
+- `Add-IntuneWin32App`: the validation that a PowerShell script detection rule is not combined with other detection rules was never triggered, because it referenced an undefined `$DetectionRules` variable. The validation now works and stops the app from being created
 
 ### Enhancements
 - Added `RemoveReturnCode` and `ReturnCodeAction` (Merge or Replace) parameters to `Add-IntuneWin32App` and `Set-IntuneWin32App`
